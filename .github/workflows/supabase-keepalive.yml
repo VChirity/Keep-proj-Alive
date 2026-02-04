@@ -1,5 +1,5 @@
-# Mantém o projeto Supabase ativo (evita pausa por inatividade no plano gratuito).
-# Roda todo dia e faz uma requisição leve à API do Supabase.
+# Mantém os projetos Supabase ativos (evita pausa por inatividade no plano gratuito).
+# Roda todo dia e faz uma requisição leve em cada projeto listado em supabase-keepalive-projects.json
 name: Supabase keep-alive
 
 on:
@@ -15,23 +15,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ping Supabase
+      - name: Ping Supabase (todos os projetos)
         run: |
-          CONFIG="public/supabase-config.json"
+          CONFIG=".github/supabase-keepalive-projects.json"
           if [ ! -f "$CONFIG" ]; then
             echo "Arquivo $CONFIG não encontrado."
             exit 1
           fi
-          URL=$(jq -r .url "$CONFIG")
-          KEY=$(jq -r .anonKey "$CONFIG")
-          if [ -z "$URL" ] || [ -z "$KEY" ] || [ "$URL" = "null" ] || [ "$KEY" = "null" ]; then
-            echo "URL ou anonKey vazios em $CONFIG."
-            exit 1
-          fi
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "apikey: $KEY" \
-            -H "Authorization: Bearer $KEY" \
-            -H "Accept: application/json" \
-            "$URL/rest/v1/")
-          echo "Supabase respondeu com HTTP $CODE - projeto ativo."
-          if [ "$CODE" -ge 400 ]; then exit 1; fi
+          COUNT=$(jq length "$CONFIG")
+          echo "Encontrados $COUNT projeto(s) para pingar."
+          for i in $(seq 0 $((COUNT - 1))); do
+            NAME=$(jq -r ".[$i].name" "$CONFIG")
+            URL=$(jq -r ".[$i].url" "$CONFIG")
+            KEY=$(jq -r ".[$i].anonKey" "$CONFIG")
+            if [ "$URL" = "null" ] || [ "$KEY" = "null" ] || [[ "$URL" == COLE_* ]] || [[ "$KEY" == COLE_* ]]; then
+              echo "[$NAME] Ignorado (URL ou anonKey não configurado)."
+              continue
+            fi
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "apikey: $KEY" \
+              -H "Authorization: Bearer $KEY" \
+              -H "Accept: application/json" \
+              "$URL/rest/v1/")
+            echo "[$NAME] HTTP $CODE - projeto ativo."
+            if [ "$CODE" -ge 400 ]; then exit 1; fi
+          done
+          echo "Todos os projetos respondendo."

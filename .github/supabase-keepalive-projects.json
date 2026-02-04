@@ -1,0 +1,12 @@
+[
+  {
+    "name": "lumassagem",
+    "url": "https://nonijmdzqwslttvvoqfh.supabase.co",
+    "anonKey": "sb_publishable_MK5g0eZgCPpgM806c_oa7Q_jkfQzYgb"
+  },
+  {
+    "name": "outro-app",
+    "url": "COLE_AQUI_URL_DO_SUPABASE_DO_OUTRO_APP",
+    "anonKey": "COLE_AQUI_ANON_KEY_PUBLISHABLE_DO_OUTRO_APP"
+  }
+]
