@@ -30,26 +30,37 @@ jobs:
               continue
             fi
             OK=0
-            # 1) Health (não precisa de chave)
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$URL/auth/v1/health" 2>/dev/null || echo "000")
+            # 1) Auth health (não precisa de chave)
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 -H "Accept: application/json" "$URL/auth/v1/health" 2>/dev/null || echo "000")
             if [ "$CODE" = "200" ]; then
-              echo "[$NAME] OK (health)."
+              echo "[$NAME] OK (auth health)."
               OK=1
             fi
-            # 2) REST com chave
+            # 2) REST com chave (GET na API)
             if [ "$OK" -eq 0 ] && [ "$KEY" != "null" ] && [ -n "$KEY" ] && [[ "$KEY" != COLE_* ]]; then
               CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 \
-                -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Accept: application/json" \
+                -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+                -H "Accept: application/json" -H "Content-Type: application/json" \
                 "$URL/rest/v1/" 2>/dev/null || echo "000")
               if [ "$CODE" != "000" ] && [ "$CODE" -lt 400 ] 2>/dev/null; then
                 echo "[$NAME] OK (REST)."
                 OK=1
               fi
+              # 2b) Alguns projetos respondem 200 em OPTIONS
+              if [ "$OK" -eq 0 ]; then
+                CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 -X OPTIONS \
+                  -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+                  "$URL/rest/v1/" 2>/dev/null || echo "000")
+                if [ "$CODE" = "200" ] || [ "$CODE" = "204" ]; then
+                  echo "[$NAME] OK (REST OPTIONS)."
+                  OK=1
+                fi
+              fi
             fi
-            # 3) Raiz do projeto (qualquer resposta = projeto foi acessado)
+            # 3) Raiz (fallback - qualquer resposta conta como uso)
             if [ "$OK" -eq 0 ]; then
               CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$URL/" 2>/dev/null || echo "000")
               echo "[$NAME] Ping feito (HTTP $CODE)."
             fi
           done
-          echo "Concluído. Os dois projetos foram acessados."
+          echo "Concluído. Ambos os projetos foram acessados."
