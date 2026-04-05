@@ -1,14 +1,18 @@
 # Keep-alive do Supabase (vários projetos)
 
-O workflow **Supabase keep-alive** roda **todo dia às 09:00 (BRT)** e faz uma requisição em cada projeto listado em **`.github/supabase-keepalive-projects.json`**. Assim nenhum projeto Supabase pausa por inatividade (plano gratuito).
+O workflow **Supabase keep-alive** roda **duas vezes por dia** e faz requisições em cada projeto listado em **`.github/supabase-keepalive-projects.json`**, para reduzir pausa por inatividade no plano gratuito do Supabase.
+
+O workflow **Manter repositório ativo** roda **uma vez por mês** e atualiza `.github/last-repo-activity.txt`. Isso ajuda a evitar que o GitHub **desative workflows agendados** quando o repositório fica muito tempo sem commits (~60 dias sem atividade).
+
+## Se o ping parar de rodar
+
+1. Abra **Actions** no GitHub e veja se o workflow **Supabase keep-alive** está **habilitado** (não desativado).
+2. Se estiver desativado por inatividade do repositório, **ative de novo** e faça um commit qualquer, ou espere o job mensal **Manter repositório ativo** (ou rode manualmente em **Run workflow**).
 
 ## Adicionar outro app
 
-1. Abra o arquivo **`.github/supabase-keepalive-projects.json`** no repositório.
-2. No segundo item (ou adicione um novo objeto `{ "name": "...", "url": "...", "anonKey": "..." }`):
-   - **name**: um nome para identificar (ex: `meu-outro-app`).
-   - **url**: a URL do projeto no Supabase (ex: `https://xxxx.supabase.co`). Você acha em Supabase → Project Settings → API → Project URL.
-   - **anonKey**: a chave **publishable** (não a secret). Em Supabase → Project Settings → API → Publishable key.
-3. Salve, faça commit e push. Pronto: o mesmo workflow passa a pingar os dois (ou mais) projetos todo dia.
+1. Edite **`.github/supabase-keepalive-projects.json`** e acrescente um objeto `{ "name": "...", "url": "...", "anonKey": "..." }`.
+2. **url**: Project Settings → API → Project URL (`https://xxxx.supabase.co`).
+3. **anonKey**: chave **anon** / **publishable** (não a service role).
 
-Entradas com `url` ou `anonKey` ainda no placeholder (COLE_AQUI_...) são ignoradas, não quebram o workflow.
+Repositório público: a chave anon é pública por desenho, mas evite commitar a **service role**.

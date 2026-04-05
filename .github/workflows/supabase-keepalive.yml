@@ -1,12 +1,15 @@
 # Mantém os projetos Supabase ativos (evita pausa por inatividade no plano gratuito).
-# Roda todo dia e faz uma requisição leve em cada projeto listado em supabase-keepalive-projects.json
+# Lista: .github/supabase-keepalive-projects.json
+# Se o workflow agendado parar de rodar, confira em Actions se o GitHub desativou por
+# inatividade do repositório (~60 dias sem commit). O workflow "Manter repositório ativo"
+# gera um commit mensal para evitar isso.
+
 name: Supabase keep-alive
 
 on:
   schedule:
-    # Todo dia às 12:00 UTC (09:00 BRT)
-    - cron: "0 12 * * *"
-  workflow_dispatch: # Rodar manualmente: Actions > Supabase keep-alive > Run workflow
+    - cron: "0 8,20 * * *"
+  workflow_dispatch:
 
 jobs:
   ping:
@@ -17,10 +20,15 @@ jobs:
 
       - name: Ping Supabase (todos os projetos)
         run: |
+          set -euo pipefail
           CONFIG=".github/supabase-keepalive-projects.json"
-          if [ ! -f "$CONFIG" ]; then echo "Arquivo $CONFIG não encontrado."; exit 1; fi
+          if [ ! -f "$CONFIG" ]; then
+            echo "::error::Arquivo $CONFIG não encontrado."
+            exit 1
+          fi
           COUNT=$(jq length "$CONFIG")
-          echo "Encontrados $COUNT projeto(s). Pingando..."
+          echo "Encontrados $COUNT projeto(s)."
+          FAILED=0
           for i in $(seq 0 $((COUNT - 1))); do
             NAME=$(jq -r ".[$i].name" "$CONFIG")
             URL=$(jq -r ".[$i].url" "$CONFIG")
@@ -30,37 +38,50 @@ jobs:
               continue
             fi
             OK=0
-            # 1) Auth health (não precisa de chave)
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 -H "Accept: application/json" "$URL/auth/v1/health" 2>/dev/null || echo "000")
+            CODE=$(curl -sS -o /tmp/ka_body.txt -w "%{http_code}" --connect-timeout 15 --max-time 45 \
+              -H "Accept: application/json" "$URL/auth/v1/health" 2>/dev/null || echo "000")
             if [ "$CODE" = "200" ]; then
               echo "[$NAME] OK (auth health)."
               OK=1
             fi
-            # 2) REST com chave (GET na API)
             if [ "$OK" -eq 0 ] && [ "$KEY" != "null" ] && [ -n "$KEY" ] && [[ "$KEY" != COLE_* ]]; then
-              CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 \
+              CODE=$(curl -sS -o /tmp/ka_body.txt -w "%{http_code}" --connect-timeout 15 --max-time 45 \
                 -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
-                -H "Accept: application/json" -H "Content-Type: application/json" \
-                "$URL/rest/v1/" 2>/dev/null || echo "000")
-              if [ "$CODE" != "000" ] && [ "$CODE" -lt 400 ] 2>/dev/null; then
+                -H "Accept: application/json" \
+                "${URL%/}/rest/v1/" 2>/dev/null || echo "000")
+              if [ "$CODE" != "000" ] && [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]; then
                 echo "[$NAME] OK (REST)."
                 OK=1
               fi
-              # 2b) Alguns projetos respondem 200 em OPTIONS
-              if [ "$OK" -eq 0 ]; then
-                CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 -X OPTIONS \
-                  -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
-                  "$URL/rest/v1/" 2>/dev/null || echo "000")
-                if [ "$CODE" = "200" ] || [ "$CODE" = "204" ]; then
-                  echo "[$NAME] OK (REST OPTIONS)."
-                  OK=1
-                fi
+            fi
+            if [ "$OK" -eq 0 ] && [ "$KEY" != "null" ] && [ -n "$KEY" ] && [[ "$KEY" != COLE_* ]]; then
+              CODE=$(curl -sS -o /tmp/ka_body.txt -w "%{http_code}" --connect-timeout 15 --max-time 45 -X OPTIONS \
+                -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+                "${URL%/}/rest/v1/" 2>/dev/null || echo "000")
+              if [ "$CODE" = "200" ] || [ "$CODE" = "204" ]; then
+                echo "[$NAME] OK (REST OPTIONS)."
+                OK=1
               fi
             fi
-            # 3) Raiz (fallback - qualquer resposta conta como uso)
             if [ "$OK" -eq 0 ]; then
-              CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$URL/" 2>/dev/null || echo "000")
-              echo "[$NAME] Ping feito (HTTP $CODE)."
+              CODE=$(curl -sS -o /tmp/ka_body.txt -w "%{http_code}" --connect-timeout 15 --max-time 45 \
+                "${URL%/}/" 2>/dev/null || echo "000")
+              if [ "$CODE" = "000" ]; then
+                echo "::error::[$NAME] Sem resposta (projeto pausado, DNS ou rede)."
+                FAILED=$((FAILED + 1))
+              elif [ "$CODE" -ge 200 ] && [ "$CODE" -lt 400 ]; then
+                echo "[$NAME] OK (raiz HTTP $CODE)."
+              elif [ "$CODE" -eq 503 ] || [ "$CODE" -eq 502 ]; then
+                echo "::error::[$NAME] Indisponível (HTTP $CODE). Projeto pode estar pausado."
+                FAILED=$((FAILED + 1))
+              else
+                echo "::warning::[$NAME] Resposta inesperada HTTP $CODE (verifique URL/chave)."
+                FAILED=$((FAILED + 1))
+              fi
             fi
           done
-          echo "Concluído. Ambos os projetos foram acessados."
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED projeto(s) não responderam como esperado."
+            exit 1
+          fi
+          echo "Concluído: $COUNT projeto(s) verificado(s) com sucesso."
